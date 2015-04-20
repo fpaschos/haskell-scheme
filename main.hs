@@ -23,9 +23,16 @@ parseString  = do
   char '"'
   return $ String x
 
+parseAtom :: Parser LispVal
 parseAtom = do
   first <- letter <|> symbol
-  return first 
+  rest <- many (letter <|> digit <|> symbol)
+  let atom = first:rest
+  return $ case atom of
+            "#t" -> Bool True
+            "#f" -> Bool False
+            _ -> Atom atom
+                        
 
 
 readExpr :: String -> String
