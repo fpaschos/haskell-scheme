@@ -55,7 +55,7 @@ hex2dig x = fst $ readHex x !! 0
 -- parseNumber = do
   -- digits <- many1 digit
   -- let n = read digits
-  -- return (Number n) 
+  -- return (Naumber n) 
 
 parseAtom :: Parser LispVal
 parseAtom = do
@@ -75,22 +75,69 @@ parseExpr = parseAtom
             <|> parseString
             <|> parseNumber
             <|> parseBool
+            <|> parseQuoted
+            <|> do char '('
+                   x <- try parseList <|> parseDottedList
+                   char ')'
+                   return x
 
 parseList :: Parser LispVal
-parseList = liftM List $ sepBy parseExpr spaces
+parseList = liftM List (sepBy parseExpr spaces)
 
 parseDottedList :: Parser LispVal
 parseDottedList = do
   h <- endBy parseExpr spaces
   t <- char '.' >> spaces >> parseExpr
   return $ DottedList h t
-  
-readExpr :: String -> String
+
+
+parseQuoted :: Parser LispVal
+parseQuoted = do
+  char '\''
+  x <- parseExpr
+  return $ List [Atom "quote", x]
+
+
+--Evaluator
+eval :: LispVal -> LispVal
+eval val@(String _) = val
+eval val@(Number _) = val
+eval val@(Bool _ ) = val
+eval (List [Atom "quote", val]) = val
+eval (List (Atom func : args)) = apply func $ map eval args
+
+apply func args = maybe (Bool False) ($ args) $ lookup func primitives
+
+primitives :: [(String, [LispVal] -> LispVal)]
+primitives = [("+", numericBinop (+)),
+              ("-", numericBinop (-)),
+              ("*", numericBinop (*)),
+              ("/", numericBinop div),
+              ("mod", numericBinop mod),
+              ("quotient", numericBinop quot),
+              ("remainder", numericBinop rem)]
+             
+--Display
+unwordsList :: [LispVal] -> String
+unwordsList = unwords . map showVal
+
+showVal :: LispVal -> String
+showVal (String contents) = "\"" ++ contents ++ "\""
+showVal (Atom name) = name
+showVal (Number contents) =  show contents
+showVal (Bool True)  = "#t"
+showVal (Bool False) = "#f"
+showVal (List contents) = "(" ++ unwordsList contents ++ ")"
+showVal (DottedList h t) = "(" ++ unwordsList h ++ " . " ++ showVal t ++ ")"
+
+instance Show LispVal where show = showVal
+
+                           
+readExpr :: String -> LispVal
 readExpr input = case parse parseExpr "lisp" input  of
-  Left err -> "No match: " ++ show err
-  Right _ -> "Found value " 
+  Left err -> String  $ "No match: " ++ show err
+  Right val -> val 
 
 main ::IO ()
-main = do
-  args <- getArgs
-  putStrLn (readExpr (args !! 0))  
+main = getArgs >>= print . eval . readExpr . head
+    
